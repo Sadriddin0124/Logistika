@@ -16,9 +16,12 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from account.permission import CanDeleteUser
+from data.finans.models import Logs
 from data.flight.serializers import FlightListserializer, FlightListCReateserializer, FlightOrderedListserializer
+from data.gas.models import GasPurchase, GasSale, Gas_another_station
+from data.oil.models import OilPurchase, Utilized_oil
+from data.salarka.models import Salarka, Sale, SalarkaAnotherStation
 from .models import Flight, Ordered
-from ..finans.models import Logs
 from ..finans.serializers import FinansListserializer
 
 
@@ -480,6 +483,123 @@ class DashboardStatsView(APIView):
             "Сумма лизинга выплачена": leasing_paid,
 
             "Всего заказов": total_orders,
+        }
+
+        return Response(data)
+
+
+class FinanceFuelStatsView(APIView):
+
+    def parse_date(self, date_str: str, field_name: str):
+        try:
+            return datetime.strptime(date_str, "%d.%m.%Y").date()
+        except ValueError:
+            raise ValidationError(
+                {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+            )
+
+    def get(self, request):
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+
+        start_date = end_date = None
+
+        if start_date_str:
+            start_date = self.parse_date(start_date_str, "start_date")
+
+        if end_date_str:
+            end_date = self.parse_date(end_date_str, "end_date")
+
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError(
+                {"detail": "start_date end_date dan katta bolmasin"}
+            )
+
+        # ---- helperlar ----
+        def by_date(qs):
+            if start_date:
+                qs = qs.filter(created_at__date__gte=start_date)
+            if end_date:
+                qs = qs.filter(created_at__date__lte=end_date)
+            return qs
+
+        def sum_or_0(qs, field):
+            return qs.aggregate(s=Sum(field))["s"] or 0
+
+        # ================= FINANCE (tepadagi 3 ta karta) =================
+        logs_qs = by_date(Logs.objects.all())
+
+        total_income = sum_or_0(logs_qs.filter(action="INCOME"), "amount_uzs")
+        total_expense = sum_or_0(logs_qs.filter(action="OUTCOME"), "amount_uzs")
+        total_for_all_cars = total_income - total_expense  # Итого по всем автомобилям
+
+        leasing_paid = sum_or_0(
+            logs_qs.filter(action="OUTCOME", kind="LEASING"),
+            "amount_uzs",
+        )
+
+        # Лизинговый баланс – hozircha umumiy holat, sanaga bog‘lamaymiz
+        try:
+            from data.cars.models import Leasing
+            leasing_balance = (
+                    Leasing.objects.aggregate(s=Sum("balance"))["s"] or 0
+            )
+        except Exception:
+            leasing_balance = 0
+
+        # ================= GAS =================
+        gas_purchases_qs = by_date(GasPurchase.objects.all())
+        gas_sales_qs = by_date(GasSale.objects.all())
+        gas_other_station_qs = by_date(Gas_another_station.objects.all())
+
+        gas_purchase_volume = (
+                sum_or_0(gas_purchases_qs, "amount")
+                + sum_or_0(gas_other_station_qs, "purchased_volume")
+        )
+        gas_sale_volume = sum_or_0(gas_sales_qs, "amount")
+        gas_total_volume = gas_purchase_volume - gas_sale_volume
+
+        # ================= OIL =================
+        oil_purchases_qs = by_date(OilPurchase.objects.all())
+        utilized_oil_qs = by_date(Utilized_oil.objects.all())
+
+        oil_purchase_volume = sum_or_0(oil_purchases_qs, "oil_volume")
+        oil_sale_volume = sum_or_0(utilized_oil_qs, "quantity_utilized")
+        oil_total_volume = oil_purchase_volume - oil_sale_volume
+
+        # ================= SALARKA =================
+        salarka_purchases_qs = by_date(Salarka.objects.all())
+        salarka_another_qs = by_date(SalarkaAnotherStation.objects.all())
+        salarka_sales_qs = by_date(Sale.objects.all())
+
+        salarka_purchase_volume = (
+                sum_or_0(salarka_purchases_qs, "volume")
+                + sum_or_0(salarka_another_qs, "volume")
+        )
+        salarka_sale_volume = sum_or_0(salarka_sales_qs, "volume")
+        salarka_total_volume = salarka_purchase_volume - salarka_sale_volume
+
+        # ================= FRONTDAGI NOMLAR BILAN JAVOB =================
+        data = {
+            # yuqori 3 ta karta
+            "Итого по всем автомобилям": total_for_all_cars,
+            "Лизинговый баланс": leasing_balance,
+            "Сумма лизинга выплачена": leasing_paid,
+
+            # Газ karta
+            "Газ": gas_total_volume,
+            "Продажа газа": gas_sale_volume,
+            "Покупка газа": gas_purchase_volume,
+
+            # Масло karta
+            "Масло": oil_total_volume,
+            "Продажа масло": oil_sale_volume,
+            "Покупка масло": oil_purchase_volume,
+
+            # Солярка karta
+            "Солярка": salarka_total_volume,
+            "Продажа солярка": salarka_sale_volume,
+            "Покупка солярка": salarka_purchase_volume,
         }
 
         return Response(data)
