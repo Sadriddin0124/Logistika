@@ -1,7 +1,6 @@
 import django_filters
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema
 from drf_yasg import openapi
 from drf_yasg.openapi import Response
 from drf_yasg.utils import swagger_auto_schema
@@ -363,16 +362,13 @@ class FlightCloseApi(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-extend_schema(tags=["FLIGHT_STATS"])
-
-
 class FlightStatsView(APIView):
     def get(self, request):
         # /flight/statistics/?start_date=01.11.2025&end_date=30.12.2025
         start_date_str = request.query_params.get("start_date")
         end_date_str = request.query_params.get("end_date")
 
-        qs = Flight.objects.filter(is_archived=False)
+        qs = Flight.objects.all()
 
         def parse_date(date_str: str, field_name: str):
             try:
@@ -402,6 +398,43 @@ class FlightStatsView(APIView):
             "active_flights": qs.filter(status="ACTIVE").count(),
             "in_uzb_flights": qs.filter(flight_type="IN_UZB").count(),
             "out_uzb_flights": qs.filter(flight_type="OUT").count(),
+        }
+
+        return Response(stats)
+
+
+class OrderStatsView(APIView):
+    def get(self, request):
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+
+        qs = Ordered.objects.all()
+
+        def parse_date(date_str: str, field_name: str):
+            try:
+                return datetime.strptime(date_str, "%d.%m.%Y").date()
+            except ValueError:
+                raise ValidationError(
+                    {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+                )
+
+        start_date = end_date = None
+
+        if start_date_str:
+            start_date = parse_date(start_date_str, "start_date")
+            qs = qs.filter(departure_date__gte=start_date)
+
+        if end_date_str:
+            end_date = parse_date(end_date_str, "end_date")
+            qs = qs.filter(departure_date__lte=end_date)
+
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError(
+                {"detail": "start_date end_date dan katta bolmasin"}
+            )
+
+        stats = {
+            "total_flights": qs.count(),
         }
 
         return Response(stats)
