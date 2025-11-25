@@ -20,7 +20,5 @@ urlpatterns = [
 
     path("finance/<uuid:pk>", FinanceFlightAPIView.as_view(), name="flight-finance"),
     path("close/<uuid:pk>", FlightCloseApi.as_view(), name="flight-close"),
-    path("statistics/", FlightStatsView.as_view(), name="flight-statistics"),
-    path("order/", OrderStatsView.as_view(), name="order-statistics"),
-
+    path("statistics/", DashboardStatsView.as_view(), name="flight-statistics"),
 ]

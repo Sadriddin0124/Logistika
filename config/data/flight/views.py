@@ -1,4 +1,5 @@
 import django_filters
+from django.db.models import Sum
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg import openapi
@@ -362,79 +363,123 @@ class FlightCloseApi(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class FlightStatsView(APIView):
+class DashboardStatsView(APIView):
+
+    def parse_date(self, date_str: str, field_name: str):
+        try:
+            return datetime.strptime(date_str, "%d.%m.%Y").date()
+        except ValueError:
+            raise ValidationError(
+                {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+            )
+
     def get(self, request):
-        # /flight/statistics/?start_date=01.11.2025&end_date=30.12.2025
         start_date_str = request.query_params.get("start_date")
         end_date_str = request.query_params.get("end_date")
-
-        qs = Flight.objects.all()
-
-        def parse_date(date_str: str, field_name: str):
-            try:
-                return datetime.strptime(date_str, "%d.%m.%Y").date()
-            except ValueError:
-                raise ValidationError(
-                    {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
-                )
 
         start_date = end_date = None
 
         if start_date_str:
-            start_date = parse_date(start_date_str, "start_date")
-            qs = qs.filter(departure_date__gte=start_date)
+            start_date = self.parse_date(start_date_str, "start_date")
 
         if end_date_str:
-            end_date = parse_date(end_date_str, "end_date")
-            qs = qs.filter(departure_date__lte=end_date)
+            end_date = self.parse_date(end_date_str, "end_date")
 
         if start_date and end_date and end_date < start_date:
             raise ValidationError(
                 {"detail": "start_date end_date dan katta bolmasin"}
             )
 
-        stats = {
-            "total_flights": qs.count(),
-            "active_flights": qs.filter(status="ACTIVE").count(),
-            "in_uzb_flights": qs.filter(flight_type="IN_UZB").count(),
-            "out_uzb_flights": qs.filter(flight_type="OUT").count(),
-        }
+        # ------------ FLIGHT queryset ------------
+        flight_qs = Flight.objects.all()
+        if start_date:
+            flight_qs = flight_qs.filter(departure_date__gte=start_date)
+        if end_date:
+            flight_qs = flight_qs.filter(departure_date__lte=end_date)
 
-        return Response(stats)
+        # ------------ ORDER queryset (hozircha faqat count) ------------
+        order_qs = Ordered.objects.all()
+        if start_date:
+            order_qs = order_qs.filter(departure_date__gte=start_date)
+        if end_date:
+            order_qs = order_qs.filter(departure_date__lte=end_date)
 
+        # ------------ LOGS queryset ------------
+        logs_qs = Logs.objects.all()
+        if start_date:
+            logs_qs = logs_qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            logs_qs = logs_qs.filter(created_at__date__lte=end_date)
 
-class OrderStatsView(APIView):
-    def get(self, request):
-        start_date_str = request.query_params.get("start_date")
-        end_date_str = request.query_params.get("end_date")
+        # ------------ FLIGHT STATS ------------
+        total_flights = flight_qs.count()  # Рейсы
+        active_flights = flight_qs.filter(status="ACTIVE").count()  # Активные рейсы
+        in_uzb_flights = flight_qs.filter(flight_type="IN_UZB").count()  # Рейсы в Узбекистане
+        out_uzb_flights = flight_qs.filter(flight_type="OUT").count()  # Рейсы за пределы Узбекистана
 
-        qs = Ordered.objects.all()
+        reys_na_zakaz = 0
 
-        def parse_date(date_str: str, field_name: str):
-            try:
-                return datetime.strptime(date_str, "%d.%m.%Y").date()
-            except ValueError:
-                raise ValidationError(
-                    {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
-                )
+        total_orders = order_qs.count()  # hozircha frontda ishlatilmasa ham zaxirada
 
-        start_date = end_date = None
+        # ------------ FINANCE STATS ------------
+        total_income = (
+                logs_qs.filter(action="INCOME")
+                .aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
 
-        if start_date_str:
-            start_date = parse_date(start_date_str, "start_date")
-            qs = qs.filter(departure_date__gte=start_date)
+        total_expense = (
+                logs_qs.filter(action="OUTCOME")
+                .aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
 
-        if end_date_str:
-            end_date = parse_date(end_date_str, "end_date")
-            qs = qs.filter(departure_date__lte=end_date)
+        employee_expense = (
+                logs_qs.filter(
+                    action="OUTCOME",
+                    kind__in=["PAY_SALARY", "BONUS"],
+                ).aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
 
-        if start_date and end_date and end_date < start_date:
-            raise ValidationError(
-                {"detail": "start_date end_date dan katta bolmasin"}
+        other_expense = (
+                logs_qs.filter(
+                    action="OUTCOME",
+                    kind__in=["OTHER", "FIX_CAR", "BUY_CAR", "FLIGHT"],
+                ).aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        leasing_paid = (
+                logs_qs.filter(
+                    action="OUTCOME",
+                    kind="LEASING",
+                ).aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        try:
+            from data.cars.models import Leasing
+            leasing_balance = (
+                    Leasing.objects.aggregate(s=Sum("balance"))["s"] or 0
             )
+        except Exception:
+            leasing_balance = 0
 
-        stats = {
-            "total_flights": qs.count(),
+        total_for_all_cars = total_income - total_expense
+
+        data = {
+            "Рейсы": total_flights,
+            "Активные рейсы": active_flights,
+            "Рейсы в Узбекистане": in_uzb_flights,
+            "Рейсы за пределы Узбекистана": out_uzb_flights,
+            "Рейс на заказ": reys_na_zakaz,
+
+            "Сумма дохода": total_income,
+            "Сумма расхода": total_expense,
+            "Расходы на сотрудников": employee_expense,
+            "Прочие расходы": other_expense,
+
+            "Итого по всем автомобилям": total_for_all_cars,
+            "Лизинговый баланс": leasing_balance,
+            "Сумма лизинга выплачена": leasing_paid,
+
+            "Всего заказов": total_orders,
         }
 
-        return Response(stats)
+        return Response(data)
