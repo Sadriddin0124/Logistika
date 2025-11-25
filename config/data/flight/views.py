@@ -1,17 +1,16 @@
-from decimal import Decimal
-
 import django_filters
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from drf_yasg import openapi
 from drf_yasg.openapi import Response
 from drf_yasg.utils import swagger_auto_schema
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
-from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView, \
-    ListAPIView, UpdateAPIView, RetrieveUpdateAPIView, DestroyAPIView
+    ListAPIView, RetrieveUpdateAPIView, DestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -30,10 +29,10 @@ class FlightListAPIView(ListCreateAPIView):
 
     filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_fields = [
-        'flight_type', "route", "status","payment_type","is_archived",
+        'flight_type', "route", "status", "payment_type", "is_archived",
     ]
-    ordering_fields = ('flight_type', "route", "status","payment_type","is_archived")
-    search_fields = ('flight_type', "route", "status","payment_type","is_archived")
+    ordering_fields = ('flight_type', "route", "status", "payment_type", "is_archived")
+    search_fields = ('flight_type', "route", "status", "payment_type", "is_archived")
 
 
 class FlightRetrieveAPIView(RetrieveUpdateAPIView):
@@ -41,10 +40,12 @@ class FlightRetrieveAPIView(RetrieveUpdateAPIView):
     serializer_class = FlightListserializer
     permission_classes = [IsAuthenticated]
 
+
 class FlightDeleteAPIView(DestroyAPIView):
     permission_classes = [IsAuthenticated, CanDeleteUser]
     authentication_classes = [JWTAuthentication]
     queryset = Flight.objects.all()
+
 
 class FlightFilter(django_filters.FilterSet):
     car_id = django_filters.UUIDFilter(field_name='car__id', lookup_expr='exact')
@@ -91,6 +92,7 @@ class FlightHistoryStatsAPIView(ListAPIView):
             return Flight.objects.filter(id=flight_id).order_by("-created_at")
         return Flight.objects.none()
 
+
 class FinanceFlightAPIView(ListAPIView):
     serializer_class = FinansListserializer
 
@@ -99,6 +101,7 @@ class FinanceFlightAPIView(ListAPIView):
         if flight_id:
             return Logs.objects.filter(flight__id=flight_id).order_by("-created_at")
         return Logs.objects.none()
+
 
 class FlightListNOPg(ListAPIView):
     serializer_class = FlightListCReateserializer
@@ -122,21 +125,23 @@ class FlightOrderedListAPIView(ListCreateAPIView):
     search_fields = ("is_archived",)
 
 
-
-
 class FlightOrderedRetrieveAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Ordered.objects.all().order_by("-created_at")
     serializer_class = FlightOrderedListserializer
     permission_classes = (IsAuthenticated,)
+
 
 class ExportFlightInfoAPIView(APIView):
     # permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         manual_parameters=[
-            openapi.Parameter("type", openapi.IN_QUERY, description="Type of data to export (flight, ordered)", type=openapi.TYPE_STRING),
-            openapi.Parameter("status", openapi.IN_QUERY, description="Filter by status (ACTIVE, INACTIVE)", type=openapi.TYPE_STRING),
-            openapi.Parameter("flight_type", openapi.IN_QUERY, description="Filter by flight type (IN_UZB, OUT)", type=openapi.TYPE_STRING),
+            openapi.Parameter("type", openapi.IN_QUERY, description="Type of data to export (flight, ordered)",
+                              type=openapi.TYPE_STRING),
+            openapi.Parameter("status", openapi.IN_QUERY, description="Filter by status (ACTIVE, INACTIVE)",
+                              type=openapi.TYPE_STRING),
+            openapi.Parameter("flight_type", openapi.IN_QUERY, description="Filter by flight type (IN_UZB, OUT)",
+                              type=openapi.TYPE_STRING),
         ],
         responses={200: "Excel file generated"}
     )
@@ -161,8 +166,8 @@ class ExportFlightInfoAPIView(APIView):
 
             headers = [
                 "Регион", "Тип рейса", "Автомобиль", "Водитель",
-                "Дата отправления", "Дата прибытия", "Цена (USD)", "Расходы водителя (USD)","Расходы рейса(USD)",
-                "Оплата за питание","Прибыль", "Статус", "Дата создания",
+                "Дата отправления", "Дата прибытия", "Цена (USD)", "Расходы водителя (USD)", "Расходы рейса(USD)",
+                "Оплата за питание", "Прибыль", "Статус", "Дата создания",
                 "Информация о грузе"
             ]
             sheet.append(headers)
@@ -183,7 +188,7 @@ class ExportFlightInfoAPIView(APIView):
                         if flight.departure_date and flight.arrival_date
                         else ""
                     ),
-                    flight.price_uzs-flight.driver_expenses_uzs-flight.flight_balance_uzs-(
+                    flight.price_uzs - flight.driver_expenses_uzs - flight.flight_balance_uzs - (
                         (max((flight.arrival_date - flight.departure_date).days, 0) * (flight.other_expenses_uzs or 0))
                         if flight.departure_date and flight.arrival_date
                         else ""
@@ -243,7 +248,6 @@ class ExportFlightInfoAPIView(APIView):
         return response
 
 
-
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status
@@ -251,6 +255,7 @@ from datetime import datetime
 from icecream import ic
 from .models import Flight
 from .serializers import FlightListserializer
+
 
 class FlightCloseApi(APIView):
     def put(self, request, pk, *args, **kwargs):
@@ -299,7 +304,6 @@ class FlightCloseApi(APIView):
                     driver.balance_uzs = float(driver.balance_uzs or 0)
                     driver.balance_uzs += float(lunch_payments or 0)
 
-
                     driver.balance_uzs -= float(flight.flight_balance_uzs or 0)
                     driver.save()
 
@@ -313,7 +317,7 @@ class FlightCloseApi(APIView):
                             flight=flight,
                             employee=flight.driver
                         )
-                    if flight.flight_balance_uzs > 0 :
+                    if flight.flight_balance_uzs > 0:
                         Logs.objects.create(
                             action="OUTCOME",
                             amount_uzs=flight.flight_balance_uzs,
@@ -349,7 +353,6 @@ class FlightCloseApi(APIView):
                 return Response({"detail": f"Invalid data for flight_balance_uzs: {e}"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-
             # Serialize and return response
             serializer = FlightListserializer(flight)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -358,3 +361,47 @@ class FlightCloseApi(APIView):
             return Response({"detail": "Flight not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+extend_schema(tags=["FLIGHT_STATS"])
+
+
+class FlightStatsView(APIView):
+    def get(self, request):
+        # /flight/statistics/?start_date=01.11.2025&end_date=30.12.2025
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+
+        qs = Flight.objects.filter(is_archived=False)
+
+        def parse_date(date_str: str, field_name: str):
+            try:
+                return datetime.strptime(date_str, "%d.%m.%Y").date()
+            except ValueError:
+                raise ValidationError(
+                    {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+                )
+
+        start_date = end_date = None
+
+        if start_date_str:
+            start_date = parse_date(start_date_str, "start_date")
+            qs = qs.filter(departure_date__gte=start_date)
+
+        if end_date_str:
+            end_date = parse_date(end_date_str, "end_date")
+            qs = qs.filter(departure_date__lte=end_date)
+
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError(
+                {"detail": "start_date end_date dan katta bolmasin"}
+            )
+
+        stats = {
+            "total_flights": qs.count(),
+            "active_flights": qs.filter(status="ACTIVE").count(),
+            "in_uzb_flights": qs.filter(flight_type="IN_UZB").count(),
+            "out_uzb_flights": qs.filter(flight_type="OUT").count(),
+        }
+
+        return Response(stats)
