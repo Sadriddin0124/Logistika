@@ -393,38 +393,32 @@ class DashboardStatsView(APIView):
                 {"detail": "start_date end_date dan katta bolmasin"}
             )
 
-        # ------------ FLIGHT queryset ------------
         flight_qs = Flight.objects.all()
         if start_date:
             flight_qs = flight_qs.filter(departure_date__gte=start_date)
         if end_date:
             flight_qs = flight_qs.filter(departure_date__lte=end_date)
 
-        # ------------ ORDER queryset (hozircha faqat count) ------------
         order_qs = Ordered.objects.all()
         if start_date:
             order_qs = order_qs.filter(departure_date__gte=start_date)
         if end_date:
             order_qs = order_qs.filter(departure_date__lte=end_date)
 
-        # ------------ LOGS queryset ------------
         logs_qs = Logs.objects.all()
         if start_date:
             logs_qs = logs_qs.filter(created_at__date__gte=start_date)
         if end_date:
             logs_qs = logs_qs.filter(created_at__date__lte=end_date)
 
-        # ------------ FLIGHT STATS ------------
-        total_flights = flight_qs.count()  # Рейсы
-        active_flights = flight_qs.filter(status="ACTIVE").count()  # Активные рейсы
-        in_uzb_flights = flight_qs.filter(flight_type="IN_UZB").count()  # Рейсы в Узбекистане
-        out_uzb_flights = flight_qs.filter(flight_type="OUT").count()  # Рейсы за пределы Узбекистана
+        total_flights = flight_qs.count()
+        active_flights = flight_qs.filter(status="ACTIVE").count()
+        in_uzb_flights = flight_qs.filter(flight_type="IN_UZB").count()
+        out_uzb_flights = flight_qs.filter(flight_type="OUT").count()
 
         reys_na_zakaz = 0
 
-        total_orders = order_qs.count()  # hozircha frontda ishlatilmasa ham zaxirada
-
-        # ------------ FINANCE STATS ------------
+        total_orders = order_qs.count()
         total_income = (
                 logs_qs.filter(action="INCOME")
                 .aggregate(s=Sum("amount_uzs"))["s"] or 0
@@ -467,22 +461,22 @@ class DashboardStatsView(APIView):
         total_for_all_cars = total_income - total_expense
 
         data = {
-            "Рейсы": total_flights,
-            "Активные рейсы": active_flights,
-            "Рейсы в Узбекистане": in_uzb_flights,
-            "Рейсы за пределы Узбекистана": out_uzb_flights,
-            "Рейс на заказ": reys_na_zakaz,
+            "total_flights": total_flights,
+            "active_flights": active_flights,
+            "in_uzb_flights": in_uzb_flights,
+            "out_uzb_flights": out_uzb_flights,
+            "order_flight": reys_na_zakaz,
 
-            "Сумма дохода": total_income,
-            "Сумма расхода": total_expense,
-            "Расходы на сотрудников": employee_expense,
-            "Прочие расходы": other_expense,
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "employee_expense": employee_expense,
+            "other_expense": other_expense,
 
-            "Итого по всем автомобилям": total_for_all_cars,
-            "Лизинговый баланс": leasing_balance,
-            "Сумма лизинга выплачена": leasing_paid,
+            "total_for_all_cars": total_for_all_cars,
+            "leasing_balance": leasing_balance,
+            "leasing_paid": leasing_paid,
 
-            "Всего заказов": total_orders,
+            "total_orders": total_orders,
         }
 
         return Response(data)
@@ -515,7 +509,6 @@ class FinanceFuelStatsView(APIView):
                 {"detail": "start_date end_date dan katta bolmasin"}
             )
 
-        # ---- helperlar ----
         def by_date(qs):
             if start_date:
                 qs = qs.filter(created_at__date__gte=start_date)
@@ -526,7 +519,6 @@ class FinanceFuelStatsView(APIView):
         def sum_or_0(qs, field):
             return qs.aggregate(s=Sum(field))["s"] or 0
 
-        # ================= FINANCE (tepadagi 3 ta karta) =================
         logs_qs = by_date(Logs.objects.all())
 
         total_income = sum_or_0(logs_qs.filter(action="INCOME"), "amount_uzs")
@@ -537,8 +529,6 @@ class FinanceFuelStatsView(APIView):
             logs_qs.filter(action="OUTCOME", kind="LEASING"),
             "amount_uzs",
         )
-
-        # Лизинговый баланс – hozircha umumiy holat, sanaga bog‘lamaymiz
         try:
             from data.cars.models import Leasing
             leasing_balance = (
@@ -547,7 +537,6 @@ class FinanceFuelStatsView(APIView):
         except Exception:
             leasing_balance = 0
 
-        # ================= GAS =================
         gas_purchases_qs = by_date(GasPurchase.objects.all())
         gas_sales_qs = by_date(GasSale.objects.all())
         gas_other_station_qs = by_date(Gas_another_station.objects.all())
@@ -558,16 +547,11 @@ class FinanceFuelStatsView(APIView):
         )
         gas_sale_volume = sum_or_0(gas_sales_qs, "amount")
         gas_total_volume = gas_purchase_volume - gas_sale_volume
-
-        # ================= OIL =================
         oil_purchases_qs = by_date(OilPurchase.objects.all())
         utilized_oil_qs = by_date(Utilized_oil.objects.all())
-
         oil_purchase_volume = sum_or_0(oil_purchases_qs, "oil_volume")
         oil_sale_volume = sum_or_0(utilized_oil_qs, "quantity_utilized")
         oil_total_volume = oil_purchase_volume - oil_sale_volume
-
-        # ================= SALARKA =================
         salarka_purchases_qs = by_date(Salarka.objects.all())
         salarka_another_qs = by_date(SalarkaAnotherStation.objects.all())
         salarka_sales_qs = by_date(Sale.objects.all())
@@ -579,27 +563,18 @@ class FinanceFuelStatsView(APIView):
         salarka_sale_volume = sum_or_0(salarka_sales_qs, "volume")
         salarka_total_volume = salarka_purchase_volume - salarka_sale_volume
 
-        # ================= FRONTDAGI NOMLAR BILAN JAVOB =================
         data = {
-            # yuqori 3 ta karta
-            "Итого по всем автомобилям": total_for_all_cars,
-            "Лизинговый баланс": leasing_balance,
-            "Сумма лизинга выплачена": leasing_paid,
-
-            # Газ karta
-            "Газ": gas_total_volume,
-            "Продажа газа": gas_sale_volume,
-            "Покупка газа": gas_purchase_volume,
-
-            # Масло karta
-            "Масло": oil_total_volume,
-            "Продажа масло": oil_sale_volume,
-            "Покупка масло": oil_purchase_volume,
-
-            # Солярка karta
-            "Солярка": salarka_total_volume,
-            "Продажа солярка": salarka_sale_volume,
-            "Покупка солярка": salarka_purchase_volume,
+            "leasing_balance": leasing_balance,
+            "leasing_paid": leasing_paid,
+            "gas_total_volume": gas_total_volume,
+            "gas_sale_volume": gas_sale_volume,
+            "gas_purchase_volume": gas_purchase_volume,
+            "oil_total_volume": oil_total_volume,
+            "oil_sale_volume": oil_sale_volume,
+            "oil_purchase_volume": oil_purchase_volume,
+            "salarka_total_volume": salarka_total_volume,
+            "salarka_sale_volume": salarka_sale_volume,
+            "salarka_purchase_volume": salarka_purchase_volume,
         }
 
         return Response(data)
