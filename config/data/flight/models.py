@@ -44,7 +44,7 @@ class Flight(TimeStampModel):
     )
 
     departure_date = models.DateField()
-    arrival_date = models.DateField( default=datetime.today(),null=True, blank=True)
+    arrival_date = models.DateField(default=datetime.today(),null=True, blank=True)
 
     price = models.FloatField(
         max_length=150,

@@ -1,6 +1,5 @@
-from decimal import Decimal
-
 import django_filters
+from django.db.models import Sum
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg import openapi
@@ -8,18 +7,21 @@ from drf_yasg.openapi import Response
 from drf_yasg.utils import swagger_auto_schema
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
-from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView, \
-    ListAPIView, UpdateAPIView, RetrieveUpdateAPIView, DestroyAPIView
+    ListAPIView, RetrieveUpdateAPIView, DestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from account.permission import CanDeleteUser
+from data.finans.models import Logs
 from data.flight.serializers import FlightListserializer, FlightListCReateserializer, FlightOrderedListserializer
+from data.gas.models import GasPurchase, GasSale, Gas_another_station
+from data.oil.models import OilPurchase, Utilized_oil
+from data.salarka.models import Salarka, Sale, SalarkaAnotherStation
 from .models import Flight, Ordered
-from ..finans.models import Logs
 from ..finans.serializers import FinansListserializer
 
 
@@ -30,10 +32,10 @@ class FlightListAPIView(ListCreateAPIView):
 
     filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_fields = [
-        'flight_type', "route", "status","payment_type","is_archived",
+        'flight_type', "route", "status", "payment_type", "is_archived",
     ]
-    ordering_fields = ('flight_type', "route", "status","payment_type","is_archived")
-    search_fields = ('flight_type', "route", "status","payment_type","is_archived")
+    ordering_fields = ('flight_type', "route", "status", "payment_type", "is_archived")
+    search_fields = ('flight_type', "route", "status", "payment_type", "is_archived")
 
 
 class FlightRetrieveAPIView(RetrieveUpdateAPIView):
@@ -41,10 +43,12 @@ class FlightRetrieveAPIView(RetrieveUpdateAPIView):
     serializer_class = FlightListserializer
     permission_classes = [IsAuthenticated]
 
+
 class FlightDeleteAPIView(DestroyAPIView):
     permission_classes = [IsAuthenticated, CanDeleteUser]
     authentication_classes = [JWTAuthentication]
     queryset = Flight.objects.all()
+
 
 class FlightFilter(django_filters.FilterSet):
     car_id = django_filters.UUIDFilter(field_name='car__id', lookup_expr='exact')
@@ -91,6 +95,7 @@ class FlightHistoryStatsAPIView(ListAPIView):
             return Flight.objects.filter(id=flight_id).order_by("-created_at")
         return Flight.objects.none()
 
+
 class FinanceFlightAPIView(ListAPIView):
     serializer_class = FinansListserializer
 
@@ -99,6 +104,7 @@ class FinanceFlightAPIView(ListAPIView):
         if flight_id:
             return Logs.objects.filter(flight__id=flight_id).order_by("-created_at")
         return Logs.objects.none()
+
 
 class FlightListNOPg(ListAPIView):
     serializer_class = FlightListCReateserializer
@@ -122,21 +128,23 @@ class FlightOrderedListAPIView(ListCreateAPIView):
     search_fields = ("is_archived",)
 
 
-
-
 class FlightOrderedRetrieveAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Ordered.objects.all().order_by("-created_at")
     serializer_class = FlightOrderedListserializer
     permission_classes = (IsAuthenticated,)
+
 
 class ExportFlightInfoAPIView(APIView):
     # permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         manual_parameters=[
-            openapi.Parameter("type", openapi.IN_QUERY, description="Type of data to export (flight, ordered)", type=openapi.TYPE_STRING),
-            openapi.Parameter("status", openapi.IN_QUERY, description="Filter by status (ACTIVE, INACTIVE)", type=openapi.TYPE_STRING),
-            openapi.Parameter("flight_type", openapi.IN_QUERY, description="Filter by flight type (IN_UZB, OUT)", type=openapi.TYPE_STRING),
+            openapi.Parameter("type", openapi.IN_QUERY, description="Type of data to export (flight, ordered)",
+                              type=openapi.TYPE_STRING),
+            openapi.Parameter("status", openapi.IN_QUERY, description="Filter by status (ACTIVE, INACTIVE)",
+                              type=openapi.TYPE_STRING),
+            openapi.Parameter("flight_type", openapi.IN_QUERY, description="Filter by flight type (IN_UZB, OUT)",
+                              type=openapi.TYPE_STRING),
         ],
         responses={200: "Excel file generated"}
     )
@@ -161,8 +169,8 @@ class ExportFlightInfoAPIView(APIView):
 
             headers = [
                 "Регион", "Тип рейса", "Автомобиль", "Водитель",
-                "Дата отправления", "Дата прибытия", "Цена (USD)", "Расходы водителя (USD)","Расходы рейса(USD)",
-                "Оплата за питание","Прибыль", "Статус", "Дата создания",
+                "Дата отправления", "Дата прибытия", "Цена (USD)", "Расходы водителя (USD)", "Расходы рейса(USD)",
+                "Оплата за питание", "Прибыль", "Статус", "Дата создания",
                 "Информация о грузе"
             ]
             sheet.append(headers)
@@ -183,7 +191,7 @@ class ExportFlightInfoAPIView(APIView):
                         if flight.departure_date and flight.arrival_date
                         else ""
                     ),
-                    flight.price_uzs-flight.driver_expenses_uzs-flight.flight_balance_uzs-(
+                    flight.price_uzs - flight.driver_expenses_uzs - flight.flight_balance_uzs - (
                         (max((flight.arrival_date - flight.departure_date).days, 0) * (flight.other_expenses_uzs or 0))
                         if flight.departure_date and flight.arrival_date
                         else ""
@@ -243,7 +251,6 @@ class ExportFlightInfoAPIView(APIView):
         return response
 
 
-
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status
@@ -251,6 +258,7 @@ from datetime import datetime
 from icecream import ic
 from .models import Flight
 from .serializers import FlightListserializer
+
 
 class FlightCloseApi(APIView):
     def put(self, request, pk, *args, **kwargs):
@@ -299,7 +307,6 @@ class FlightCloseApi(APIView):
                     driver.balance_uzs = float(driver.balance_uzs or 0)
                     driver.balance_uzs += float(lunch_payments or 0)
 
-
                     driver.balance_uzs -= float(flight.flight_balance_uzs or 0)
                     driver.save()
 
@@ -313,7 +320,7 @@ class FlightCloseApi(APIView):
                             flight=flight,
                             employee=flight.driver
                         )
-                    if flight.flight_balance_uzs > 0 :
+                    if flight.flight_balance_uzs > 0:
                         Logs.objects.create(
                             action="OUTCOME",
                             amount_uzs=flight.flight_balance_uzs,
@@ -349,7 +356,6 @@ class FlightCloseApi(APIView):
                 return Response({"detail": f"Invalid data for flight_balance_uzs: {e}"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-
             # Serialize and return response
             serializer = FlightListserializer(flight)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -358,3 +364,217 @@ class FlightCloseApi(APIView):
             return Response({"detail": "Flight not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DashboardStatsView(APIView):
+
+    def parse_date(self, date_str: str, field_name: str):
+        try:
+            return datetime.strptime(date_str, "%d.%m.%Y").date()
+        except ValueError:
+            raise ValidationError(
+                {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+            )
+
+    def get(self, request):
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+
+        start_date = end_date = None
+
+        if start_date_str:
+            start_date = self.parse_date(start_date_str, "start_date")
+
+        if end_date_str:
+            end_date = self.parse_date(end_date_str, "end_date")
+
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError(
+                {"detail": "start_date end_date dan katta bolmasin"}
+            )
+
+        flight_qs = Flight.objects.all()
+        if start_date:
+            flight_qs = flight_qs.filter(departure_date__gte=start_date)
+        if end_date:
+            flight_qs = flight_qs.filter(departure_date__lte=end_date)
+
+        order_qs = Ordered.objects.all()
+        if start_date:
+            order_qs = order_qs.filter(departure_date__gte=start_date)
+        if end_date:
+            order_qs = order_qs.filter(departure_date__lte=end_date)
+
+        logs_qs = Logs.objects.all()
+        if start_date:
+            logs_qs = logs_qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            logs_qs = logs_qs.filter(created_at__date__lte=end_date)
+
+        total_flights = flight_qs.count()
+        active_flights = flight_qs.filter(status="ACTIVE").count()
+        in_uzb_flights = flight_qs.filter(flight_type="IN_UZB").count()
+        out_uzb_flights = flight_qs.filter(flight_type="OUT").count()
+
+        reys_na_zakaz = 0
+
+        total_orders = order_qs.count()
+        total_income = (
+                logs_qs.filter(action="INCOME")
+                .aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        total_expense = (
+                logs_qs.filter(action="OUTCOME")
+                .aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        employee_expense = (
+                logs_qs.filter(
+                    action="OUTCOME",
+                    kind__in=["PAY_SALARY", "BONUS"],
+                ).aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        other_expense = (
+                logs_qs.filter(
+                    action="OUTCOME",
+                    kind__in=["OTHER", "FIX_CAR", "BUY_CAR", "FLIGHT"],
+                ).aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        leasing_paid = (
+                logs_qs.filter(
+                    action="OUTCOME",
+                    kind="LEASING",
+                ).aggregate(s=Sum("amount_uzs"))["s"] or 0
+        )
+
+        try:
+            from data.cars.models import Leasing
+            leasing_balance = (
+                    Leasing.objects.aggregate(s=Sum("balance"))["s"] or 0
+            )
+        except Exception:
+            leasing_balance = 0
+
+        total_for_all_cars = total_income - total_expense
+
+        data = {
+            "total_flights": total_flights,
+            "active_flights": active_flights,
+            "in_uzb_flights": in_uzb_flights,
+            "out_uzb_flights": out_uzb_flights,
+            "order_flight": reys_na_zakaz,
+
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "employee_expense": employee_expense,
+            "other_expense": other_expense,
+
+            "total_for_all_cars": total_for_all_cars,
+            "leasing_balance": leasing_balance,
+            "leasing_paid": leasing_paid,
+
+            "total_orders": total_orders,
+        }
+
+        return Response(data)
+
+
+class FinanceFuelStatsView(APIView):
+
+    def parse_date(self, date_str: str, field_name: str):
+        try:
+            return datetime.strptime(date_str, "%d.%m.%Y").date()
+        except ValueError:
+            raise ValidationError(
+                {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+            )
+
+    def get(self, request):
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+
+        start_date = end_date = None
+
+        if start_date_str:
+            start_date = self.parse_date(start_date_str, "start_date")
+
+        if end_date_str:
+            end_date = self.parse_date(end_date_str, "end_date")
+
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError(
+                {"detail": "start_date end_date dan katta bolmasin"}
+            )
+
+        def by_date(qs):
+            if start_date:
+                qs = qs.filter(created_at__date__gte=start_date)
+            if end_date:
+                qs = qs.filter(created_at__date__lte=end_date)
+            return qs
+
+        def sum_or_0(qs, field):
+            return qs.aggregate(s=Sum(field))["s"] or 0
+
+        logs_qs = by_date(Logs.objects.all())
+
+        total_income = sum_or_0(logs_qs.filter(action="INCOME"), "amount_uzs")
+        total_expense = sum_or_0(logs_qs.filter(action="OUTCOME"), "amount_uzs")
+        total_for_all_cars = total_income - total_expense  # Итого по всем автомобилям
+
+        leasing_paid = sum_or_0(
+            logs_qs.filter(action="OUTCOME", kind="LEASING"),
+            "amount_uzs",
+        )
+        try:
+            from data.cars.models import Leasing
+            leasing_balance = (
+                    Leasing.objects.aggregate(s=Sum("balance"))["s"] or 0
+            )
+        except Exception:
+            leasing_balance = 0
+
+        gas_purchases_qs = by_date(GasPurchase.objects.all())
+        gas_sales_qs = by_date(GasSale.objects.all())
+        gas_other_station_qs = by_date(Gas_another_station.objects.all())
+
+        gas_purchase_volume = (
+                sum_or_0(gas_purchases_qs, "amount")
+                + sum_or_0(gas_other_station_qs, "purchased_volume")
+        )
+        gas_sale_volume = sum_or_0(gas_sales_qs, "amount")
+        gas_total_volume = gas_purchase_volume - gas_sale_volume
+        oil_purchases_qs = by_date(OilPurchase.objects.all())
+        utilized_oil_qs = by_date(Utilized_oil.objects.all())
+        oil_purchase_volume = sum_or_0(oil_purchases_qs, "oil_volume")
+        oil_sale_volume = sum_or_0(utilized_oil_qs, "quantity_utilized")
+        oil_total_volume = oil_purchase_volume - oil_sale_volume
+        salarka_purchases_qs = by_date(Salarka.objects.all())
+        salarka_another_qs = by_date(SalarkaAnotherStation.objects.all())
+        salarka_sales_qs = by_date(Sale.objects.all())
+
+        salarka_purchase_volume = (
+                sum_or_0(salarka_purchases_qs, "volume")
+                + sum_or_0(salarka_another_qs, "volume")
+        )
+        salarka_sale_volume = sum_or_0(salarka_sales_qs, "volume")
+        salarka_total_volume = salarka_purchase_volume - salarka_sale_volume
+
+        data = {
+            "leasing_balance": leasing_balance,
+            "leasing_paid": leasing_paid,
+            "gas_total_volume": gas_total_volume,
+            "gas_sale_volume": gas_sale_volume,
+            "gas_purchase_volume": gas_purchase_volume,
+            "oil_total_volume": oil_total_volume,
+            "oil_sale_volume": oil_sale_volume,
+            "oil_purchase_volume": oil_purchase_volume,
+            "salarka_total_volume": salarka_total_volume,
+            "salarka_sale_volume": salarka_sale_volume,
+            "salarka_purchase_volume": salarka_purchase_volume,
+        }
+
+        return Response(data)

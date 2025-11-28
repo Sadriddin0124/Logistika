@@ -1,0 +1,22 @@
+fiilter qoshish kere boladi -> boshlanish va tugash vaqt boyicha
+begin and end _date
+
+Reys qatnashgan xammasi count
+
+
+sum -> qatanshgan xammasini sum(sum) -> $ chiqazish
+
+
+
+Лизинговый баланс -> sum
+Сумма лизинга выплачена -> qancha pul tolangani aynan -> Лизинговый баланс mana shu balansdan
+
+Масло -> sum(litr, gas)
+
+
+
+http://localhost:8000/flight/statistics/ -> malumotlarni xammasini olish
+
+http://localhost:8000/flight/statistics/?start_date=01.11.2023&end_date=1.01.2024 -> start date va end date boyicha malumot olish
+
+https://chatgpt.com/c/69257bdb-01e0-8325-a6de-0bc31ab3a826
