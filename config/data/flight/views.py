@@ -370,10 +370,10 @@ class DashboardStatsView(APIView):
 
     def parse_date(self, date_str: str, field_name: str):
         try:
-            return datetime.strptime(date_str, "%d.%m.%Y").date()
+            return datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             raise ValidationError(
-                {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+                {field_name: "yyyy-MM-dd formatida bolish kerak! Masalan: 2025-01-31"}
             )
 
     def get(self, request):
@@ -486,10 +486,10 @@ class FinanceFuelStatsView(APIView):
 
     def parse_date(self, date_str: str, field_name: str):
         try:
-            return datetime.strptime(date_str, "%d.%m.%Y").date()
+            return datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             raise ValidationError(
-                {field_name: "дд.мм.гггг -> mana shu formatda bolish kere"}
+                {field_name: "yyyy-MM-dd formatida bolish kerak! Masalan: 2025-01-31"}
             )
 
     def get(self, request):

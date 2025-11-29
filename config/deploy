@@ -23,6 +23,9 @@ server {
 
 
 
+
+
+
 docker run -d --name postgres_local -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=1 -e POSTGRES_DB=logistics -p 5432:5432 -v postgres_data:/var/lib/postgresql/data postgres:15
 
 
@@ -51,8 +54,8 @@ WantedBy=multi-user.target
 
 
 
-systemctl start (service_fayl_nomi).service
-systemctl enable (service_fayl_nomi).service
+systemctl start logistics.service
+systemctl enable logistics.service
 
 
 systemctl start service
@@ -203,7 +206,7 @@ WantedBy=multi-user.target
 /var/www/p23/dilshod/alijahon
 
 
-systemctl start (service_fayl_nomi).service
+systemctl start logistics.service.service
 systemctl start dilshod_alijahon.service
 systemctl enable (service_fayl_nomi).service
 
