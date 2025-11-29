@@ -23,25 +23,31 @@ server {
 
 
 
+docker run -d --name postgres_local -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=1 -e POSTGRES_DB=logistics -p 5432:5432 -v postgres_data:/var/lib/postgresql/data postgres:15
 
 
 
 
-/etc/systemd/system/xolmonin_falcon.service
+/etc/systemd/system/logistics.service
 
+# /etc/systemd/system/logistics.service
 
 [Unit]
-Description=gunicorn daemon
+Description=Logistika backend gunicorn service
 After=network.target
 
 [Service]
-User=root
+User=rv
 Group=www-data
-WorkingDirectory=/var/www/xolmomin/falcon/backend
-ExecStart=/var/www/xolmomin/falcon/venv/bin/gunicorn --workers 3 --bind unix:/var/www/xolmomin/falcon/backend/falcon.sock root.wsgi:application
+WorkingDirectory=/home/shokh/logistika/config
+ExecStart=/home/shokh/logistika/config/venv/bin/gunicorn \
+  --workers 3 \
+  --bind unix:/home/shokh/logistika/config/logistics.sock \
+  config.wsgi:application
 
 [Install]
 WantedBy=multi-user.target
+
 
 
 
